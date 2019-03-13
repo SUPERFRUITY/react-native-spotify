@@ -19,20 +19,20 @@
 	BOOL _loggingIn;
 	BOOL _loggingInPlayer;
 	BOOL _loggingOutPlayer;
-	
+
 	SPTAuth* _auth;
 	NSTimer* _authRenewalTimer;
 	SPTAudioStreamingController* _player;
-	
+
 	NSDictionary* _options;
 	NSNumber* _cacheSize;
-	
+
 	NSMutableArray<RNSpotifyCompletion*>* _loginPlayerResponses;
 	NSMutableArray<RNSpotifyCompletion*>* _logoutPlayerResponses;
-	
+
 	BOOL _renewingSession;
 	NSMutableArray<RNSpotifyCompletion*>* _renewCallbacks;
-	
+
 	NSString* _audioSessionCategory;
 }
 +(NSMutableDictionary*)mutableDictFromDict:(NSDictionary*)dict;
@@ -64,20 +64,20 @@
 		_loggingIn = NO;
 		_loggingInPlayer = NO;
 		_loggingOutPlayer = NO;
-		
+
 		_auth = nil;
 		_authRenewalTimer = nil;
 		_player = nil;
-		
+
 		_options = nil;
 		_cacheSize = nil;
-		
+
 		_loginPlayerResponses = [NSMutableArray array];
 		_logoutPlayerResponses = [NSMutableArray array];
-		
+
 		_renewingSession = NO;
 		_renewCallbacks = [NSMutableArray array];
-		
+
 		_audioSessionCategory = nil;
 	}
 	return self;
@@ -175,9 +175,9 @@ RCT_EXPORT_METHOD(initialize:(NSDictionary*)options resolve:(RCTPromiseResolveBl
 		[RNSpotifyErrorCode.AlreadyInitialized reject:reject];
 		return;
 	}
-	
+
 	printOutLog(@"initializing Spotify");
-	
+
 	// ensure options is not null or missing fields
 	if(options == nil) {
 		[[RNSpotifyError nullParameterErrorForName:@"options"] reject:reject];
@@ -187,13 +187,13 @@ RCT_EXPORT_METHOD(initialize:(NSDictionary*)options resolve:(RCTPromiseResolveBl
 		[[RNSpotifyError missingOptionErrorForName:@"clientID"] reject:reject];
 		return;
 	}
-	
+
 	// load default options
 	_options = options;
 	_auth = [SPTAuth defaultInstance];
 	_player = [SPTAudioStreamingController sharedInstance];
 	_cacheSize = @(1024 * 1024 * 64);
-	
+
 	// load auth options
 	_auth.clientID = options[@"clientID"];
 	_auth.redirectURL = [NSURL URLWithString:options[@"redirectURL"]];
@@ -205,7 +205,7 @@ RCT_EXPORT_METHOD(initialize:(NSDictionary*)options resolve:(RCTPromiseResolveBl
 	if(cacheSize!=nil) {
 		_cacheSize = cacheSize;
 	}
-	
+
 	// load iOS-specific options
 	NSDictionary* iosOptions = options[@"ios"];
 	if(iosOptions == nil) {
@@ -215,10 +215,10 @@ RCT_EXPORT_METHOD(initialize:(NSDictionary*)options resolve:(RCTPromiseResolveBl
 	if(_audioSessionCategory == nil) {
 		_audioSessionCategory = AVAudioSessionCategoryPlayback;
 	}
-	
+
 	// done initializing
 	_initialized = YES;
-	
+
 	// call callback
 	BOOL authLoggedIn = _auth.session != nil;
 	if(authLoggedIn) {
@@ -228,7 +228,7 @@ RCT_EXPORT_METHOD(initialize:(NSDictionary*)options resolve:(RCTPromiseResolveBl
 	if(_loggedIn) {
 		[self sendEvent:@"login" args:@[]];
 	}
-	
+
 	[self logBackInIfNeeded:[RNSpotifyCompletion<NSNumber*> onComplete:^(NSNumber* loggedIn, RNSpotifyError* error) {
 		if(loggedIn != nil && loggedIn.boolValue && [[self isLoggedIn] boolValue]) {
 			[self startAuthRenewalTimer];
@@ -325,18 +325,18 @@ RCT_EXPORT_METHOD(isInitializedAsync:(RCTPromiseResolveBlock)resolve reject:(RCT
 			[completion resolve:@NO];
 			return;
 		}
-		
+
 		// add completion to be called when the renewal finishes
 		if(completion != nil) {
 			[_renewCallbacks addObject:completion];
 		}
-		
+
 		// if we're already in the process of renewing the session, don't continue
 		if(_renewingSession) {
 			return;
 		}
 		_renewingSession = YES;
-		
+
 		// renew session
 		if(_auth.session.accessToken == nil || _auth.session.accessToken.length == 0) {
 			printOutLog(@"we currently have no auth token");
@@ -348,15 +348,15 @@ RCT_EXPORT_METHOD(isInitializedAsync:(RCTPromiseResolveBlock)resolve reject:(RCT
 					printErrLog(@"failed to renew Spotify session: %@", error);
 				}
 				_renewingSession = NO;
-				
+
 				id renewed = @NO;
 				if(session != nil) {
 					_auth.session = session;
 					renewed = @YES;
 				}
-				
+
 				//TODO figure out what SPTAuth.renewSession does if the internet is not connected (probably throws an error)
-				
+
 				NSArray<RNSpotifyCompletion*>* renewCallbacks = [NSArray arrayWithArray:_renewCallbacks];
 				[_renewCallbacks removeAllObjects];
 				for(RNSpotifyCompletion* completion in renewCallbacks) {
@@ -420,7 +420,7 @@ RCT_EXPORT_METHOD(renewSession:(RCTPromiseResolveBlock)resolve reject:(RCTPromis
 		[completion resolve:nil];
 		return;
 	}
-	
+
 	// ensure only one thread is invoking the initialization at a time
 	BOOL initializedPlayer = NO;
 	NSError* error = nil;
@@ -434,27 +434,27 @@ RCT_EXPORT_METHOD(renewSession:(RCTPromiseResolveBlock)resolve reject:(RCTPromis
 			initializedPlayer = [_player startWithClientId:_auth.clientID audioController:nil allowCaching:allowCaching error:&error];
 		}
 	}
-	
+
 	// handle initialization failure
 	if(!initializedPlayer) {
 		[completion reject:[RNSpotifyError errorWithNSError:error]];
 		return;
 	}
-	
+
 	// setup player
 	_player.delegate = self;
 	_player.playbackDelegate = self;
 	if(allowCaching) {
 		_player.diskCache = [[SPTDiskCache alloc] initWithCapacity:_cacheSize.unsignedIntegerValue];
 	}
-	
+
 	// attempt to log in the player
 	[self loginPlayer:completion];
 }
 
 -(void)loginPlayer:(RNSpotifyCompletion*)completion {
 	BOOL playerLoggedIn = NO;
-	
+
 	// add completion to a list to be called when the login succeeds or fails
 	@synchronized(_loginPlayerResponses) {
 		// ensure we're not already logged in
@@ -468,7 +468,7 @@ RCT_EXPORT_METHOD(renewSession:(RCTPromiseResolveBlock)resolve reject:(RCTPromis
 			[_loginPlayerResponses addObject:completion];
 		}
 	}
-	
+
 	if(playerLoggedIn) {
 		// we're already logged in, so finish
 		[completion resolve:nil];
@@ -482,7 +482,7 @@ RCT_EXPORT_METHOD(renewSession:(RCTPromiseResolveBlock)resolve reject:(RCTPromis
 
 -(void)logoutPlayer:(RNSpotifyCompletion*)completion {
 	BOOL loggedOut = NO;
-	
+
 	@synchronized(_logoutPlayerResponses) {
 		if(!_player.loggedIn) {
 			loggedOut = YES;
@@ -492,7 +492,7 @@ RCT_EXPORT_METHOD(renewSession:(RCTPromiseResolveBlock)resolve reject:(RCTPromis
 			[_logoutPlayerResponses addObject:completion];
 		}
 	}
-	
+
 	if(loggedOut) {
 		[completion resolve:nil];
 	}
@@ -522,11 +522,11 @@ RCT_EXPORT_METHOD(login:(NSDictionary*)options resolve:(RCTPromiseResolveBlock)r
 		loginParams[@"scope"] = [scopes componentsJoinedByString:@" "];
 	}
 	_loggingIn = YES;
-	
+
 	// do UI logic on main thread
 	dispatch_async(dispatch_get_main_queue(), ^{
 		RNSpotifyAuthController* authController = [[RNSpotifyAuthController alloc] initWithAuth:_auth params:loginParams];
-		
+
 		__weak RNSpotifyAuthController* weakAuthController = authController;
 		authController.completion = [RNSpotifyCompletion<NSNumber*> onReject:^(RNSpotifyError* error) {
 			// login failed
@@ -571,7 +571,7 @@ RCT_EXPORT_METHOD(login:(NSDictionary*)options resolve:(RCTPromiseResolveBlock)r
 				}]];
 			}
 		}];
-		
+
 		// present auth view controller
 		UIViewController* topViewController = [RNSpotifyAuthController topViewController];
 		[topViewController presentViewController:authController animated:YES completion:nil];
@@ -913,21 +913,20 @@ RCT_EXPORT_METHOD(seek:(double)position resolve:(RCTPromiseResolveBlock)resolve 
 													 httpMethod:method
 														 values:params
 												valueBodyIsJSON:jsonBody
-										  sendDataAsQueryString:!jsonBody
-														  error:&error];
+										  sendDataAsQueryString:!jsonBody];
 		// handle request params error
 		if(error != nil) {
 			[completion reject:[RNSpotifyError errorWithNSError:error]];
 			return;
 		}
-		
+
 		// send request
 		[[SPTRequest sharedHandler] performRequest:request callback:^(NSError* error, NSURLResponse* response, NSData* data) {
 			if(error != nil) {
 				[completion reject:[RNSpotifyError errorWithNSError:error]];
 				return;
 			}
-			
+
 			// check if content is json
 			BOOL isJSON = NO;
 			if([response isKindOfClass:[NSHTTPURLResponse class]]) {
@@ -940,7 +939,7 @@ RCT_EXPORT_METHOD(seek:(double)position resolve:(RCTPromiseResolveBlock)resolve 
 					isJSON = YES;
 				}
 			}
-			
+
 			id result = nil;
 			if(isJSON) {
 				result = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
@@ -948,7 +947,7 @@ RCT_EXPORT_METHOD(seek:(double)position resolve:(RCTPromiseResolveBlock)resolve 
 					[completion reject:[RNSpotifyError errorWithNSError:error]];
 					return;
 				}
-				
+
 				id errorObj = result[@"error"];
 				if(errorObj != nil) {
 					id errorDescription = result[@"error_description"];
@@ -1003,7 +1002,7 @@ RCT_EXPORT_METHOD(sendRequest:(NSString*)endpoint method:(NSString*)method param
 
 -(void)audioStreamingDidLogin:(SPTAudioStreamingController*)audioStreaming {
 	_loggingInPlayer = NO;
-	
+
 	// handle loginPlayer callbacks
 	NSArray<RNSpotifyCompletion*>* loginPlayerResponses = [NSArray arrayWithArray:_loginPlayerResponses];
 	[_loginPlayerResponses removeAllObjects];
@@ -1023,14 +1022,14 @@ RCT_EXPORT_METHOD(sendRequest:(NSString*)endpoint method:(NSString*)method param
 			[_player stopWithError:nil];
 			sendLogoutEvent = YES;
 		}
-		
+
 		// handle loginPlayer callbacks
 		NSArray<RNSpotifyCompletion*>* loginPlayerResponses = [NSArray arrayWithArray:_loginPlayerResponses];
 		[_loginPlayerResponses removeAllObjects];
 		for(RNSpotifyCompletion* response in loginPlayerResponses) {
 			[response reject:[RNSpotifyError errorWithNSError:error]];
 		}
-		
+
 		if(sendLogoutEvent) {
 			[self sendEvent:@"logout" args:@[]];
 		}
@@ -1039,17 +1038,17 @@ RCT_EXPORT_METHOD(sendRequest:(NSString*)endpoint method:(NSString*)method param
 
 -(void)audioStreamingDidLogout:(SPTAudioStreamingController*)audioStreaming {
 	_loggingInPlayer = NO;
-	
+
 	BOOL wasLoggingOutPlayer = _loggingOutPlayer;
 	_loggingOutPlayer = NO;
-	
+
 	// handle loginPlayer callbacks
 	NSArray<RNSpotifyCompletion*>* loginPlayerResponses = [NSArray arrayWithArray:_loginPlayerResponses];
 	[_loginPlayerResponses removeAllObjects];
 	for(RNSpotifyCompletion* response in loginPlayerResponses) {
 		[response reject:[RNSpotifyError errorWithCodeObj:RNSpotifyErrorCode.NotLoggedIn message:@"You have been logged out"]];
 	}
-	
+
 	// if we didn't explicitly log out, try to renew the session
 	if(!wasLoggingOutPlayer && _auth.hasTokenRefreshService && _auth.session != nil && _auth.session.encryptedRefreshToken != nil) {
 		printOutLog(@"player logged out, so session needs renewal");
@@ -1071,14 +1070,14 @@ RCT_EXPORT_METHOD(sendRequest:(NSString*)endpoint method:(NSString*)method param
 		// clear session and stop player
 		[self clearSession];
 		[_player stopWithError:nil];
-		
+
 		// handle logoutPlayer callbacks
 		NSArray<RNSpotifyCompletion*>* logoutResponses = [NSArray arrayWithArray:_logoutPlayerResponses];
 		[_logoutPlayerResponses removeAllObjects];
 		for(RNSpotifyCompletion* response in logoutResponses) {
 			[response resolve:nil];
 		}
-		
+
 		// send logout event
 		[self sendEvent:@"logout" args:@[]];
 	}
@@ -1117,57 +1116,57 @@ RCT_EXPORT_METHOD(sendRequest:(NSString*)endpoint method:(NSString*)method param
 		case SPPlaybackNotifyPlay:
 			[self sendEvent:@"play" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyPause:
 			[self sendEvent:@"pause" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyTrackChanged:
 			[self sendEvent:@"trackChange" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyMetadataChanged:
 			[self sendEvent:@"metadataChange" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyContextChanged:
 			[self sendEvent:@"contextChange" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyShuffleOn:
 		case SPPlaybackNotifyShuffleOff:
 			// ignore in favor of delegate event
 			break;
-			
+
 		case SPPlaybackNotifyRepeatOn:
 		case SPPlaybackNotifyRepeatOff:
 			// ignore in favor of delegate event
 			break;
-			
+
 		case SPPlaybackNotifyBecameActive:
 			[self sendEvent:@"active" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyBecameInactive:
 			[self sendEvent:@"inactive" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyLostPermission:
 			[self sendEvent:@"permissionLost" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackEventAudioFlush:
 			[self sendEvent:@"audioFlush" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyAudioDeliveryDone:
 			[self sendEvent:@"audioDeliveryDone" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyTrackDelivered:
 			[self sendEvent:@"trackDelivered" args:@[[self createPlaybackEvent]]];
 			break;
-			
+
 		case SPPlaybackNotifyNext:
 		case SPPlaybackNotifyPrev:
 			// deprecated
